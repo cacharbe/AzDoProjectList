@@ -11,6 +11,7 @@ namespace AzDOOrganizationData.Model
         public string Url { get; set; }
         public int UserCount { get; set; }
         public bool UpdateFields { get; set; }
+        public bool IncludeInFieldReports { get; set; }
 
     }
 }

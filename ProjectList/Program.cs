@@ -26,9 +26,10 @@ namespace ProjectList
         static class Settings
         {
             public const bool UPDATEDATA = false;
+            public const bool FIELDREPORT = true;
             public const bool REPORTDATA = false;
             public const bool FIELDDATA = false;
-            public const bool ADDFIELDS = true;
+            public const bool ADDFIELDS = false;
             public const bool RUNTEST = false;
             public const string BASE = "https://dev.azure.com";
             public const string AUTHUSER = "ads.ccharbeneau@accenture.com";
@@ -57,6 +58,20 @@ namespace ProjectList
                 var azdoController = new Controller(Settings.BASE, Settings.PAT, Settings.AUTHUSER, logger);
                 Database.SetInitializer(new AzDOOrganizationDbInitializer());
 
+                if (Settings.FIELDREPORT)
+                {
+                    try
+                    {
+                        CreateNewFieldReport(azdoController, logger);
+                    }
+                    catch (Exception exception)
+                    {
+
+                        logger.ErrorFormat(
+                            $"Unable to complete  Creating Field Report {exception.Message} - {exception.StackTrace}");
+                        
+                    }
+                }
 
                 if (Settings.RUNTEST)
                 {
@@ -148,6 +163,51 @@ namespace ProjectList
             {
                 logger.ErrorFormat(
                             $"Unable to complete  Data Collection and Reporting {exception.Message} - {exception.StackTrace}");
+            }
+        }
+
+        private static void CreateNewFieldReport(Controller azdoController, ILog logger)
+        {
+            try
+            {
+                using (var projectsDb = new AzDOOrganizationDbContext())
+                {
+                    var orgs = projectsDb.Organizations.Where(o => o.IncludeInFieldReports == true).ToList();
+                    foreach (var org in orgs)
+                    {
+                        UpdateProjectsForSingleOrg(azdoController, projectsDb, org, logger);
+                        var projects = projectsDb.Projects.Where(t => t.OrganizationId == org.Id).ToList();
+                        var exceptions = projectsDb.ProjectExceptions.Where(p => p.OrganizationId == org.Id).ToList();
+                        foreach (var project in projects)
+                        {
+                            if (exceptions.All(e => e.ProjectName != project.Name))
+                            {
+                                //azdoController.DoesFieldExistInProject()
+                                var fields = azdoController.GetFieldsFromAzDOForProject(org.Name, project.Name);
+                                var newFields = projectsDb.NewFields.ToList();
+                                foreach (var newField in newFields)
+                                {
+                                    if (fields.value.ToList().Any(f => f.name == newField.Name))
+                                    {
+                                        var localField = fields.value.ToList().First(f => f.name == newField.Name);
+                                        
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                logger.InfoFormat($"{project.Name} is on the Exception List");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+
+                logger.ErrorFormat(
+                    $"Unable to complete the creation of the New Field Report {exception.Message} - {exception.StackTrace}");
+                throw;
             }
         }
 
@@ -759,106 +819,106 @@ namespace ProjectList
                         var projects = projectsDb.Projects.Where(p => p.OrganizationId == org.Id).OrderBy(p => p.Name).ToList();
                         var newFields = projectsDb.NewFields.ToList();
                         var exceptions = projectsDb.ProjectExceptions.Where(p => p.OrganizationId == org.Id).ToList();
-                        ManageProcessExceptions(exceptions, azdoController, projectsDb, logger);
-                        //foreach (var project in projects)
-                        //{
-                        //    if (!exceptions.Any(e => e.ProjectName == project.Name))
-                        //    {
-                        //        try
-                        //        {
-                        //            logger.InfoFormat($"Adding fields to Process Template for: {project.Name}");
-                        //            int newFieldOrder = 1;
-                        //            foreach (var newFieldData in newFields)
-                        //            {
+                        //ManageProcessExceptions(exceptions, azdoController, projectsDb, logger);
+                        foreach (var project in projects)
+                        {
+                            if (!exceptions.Any(e => e.ProjectName == project.Name))// && (project.Name == "EnterpriseArchitecture_2641"))
+                            {
+                                try
+                                {
+                                    logger.InfoFormat($"Attemping to Add fields to Process Template: {project.Name}");
+                                    int newFieldOrder = 1;
+                                    foreach (var newFieldData in newFields)
+                                    {
 
-                        //                string processID = GetProcessIdFromProjectInfo(azdoController, org, project);
-
-
-                        //                if (newFieldData.IsPickList)
-                        //                {
-                        //                    var pickListId =
-                        //                         azdoController.CreatePickLIst(org.Name, newFieldData.PickListJSON);
-
-                        //                    CreateFieldJson createField = JsonConvert.DeserializeObject<CreateFieldJson>(newFieldData.CreateJSON);
-                        //                    createField.pickListId = pickListId;
+                                        string processID = GetProcessIdFromProjectInfo(azdoController, org, project);
 
 
-                        //                    var addField =
-                        //                        JsonConvert.DeserializeObject<AddFieldJson>(newFieldData.AddJSON);
+                                        if (newFieldData.IsPickList)
+                                        {
+                                            var pickListId =
+                                                 azdoController.CreatePickLIst(org.Name, newFieldData.PickListJSON);
+
+                                            CreateFieldJson createField = JsonConvert.DeserializeObject<CreateFieldJson>(newFieldData.CreateJSON);
+                                            createField.pickListId = pickListId;
 
 
-                        //                    addField.pickListId = pickListId;
-
-                        //                    newFieldData.CreateJSON = JsonConvert.SerializeObject(createField);
-                        //                    newFieldData.AddJSON = JsonConvert.SerializeObject(addField);
-
-                        //                    projectsDb.SaveChanges();
-                        //                }
+                                            var addField =
+                                                JsonConvert.DeserializeObject<AddFieldJson>(newFieldData.AddJSON);
 
 
-                        //                if (!azdoController.DoesFieldExistInProject(newFieldData.ReferenceName, org.Name, project.Name))
-                        //                {
-                        //                    var createFieldResponse = azdoController.CreateNewWorkItemField(org.Name, project.Name, newFieldData.CreateJSON);
-                        //                }
+                                            addField.pickListId = pickListId;
 
-                        //                var typeIds = projectsDb.FieldItemRelationShips
-                        //                    .Where(r => r.NewFieldId == newFieldData.Id).Select(r => r.WorkItemTypeId)
-                        //                    .ToList();
+                                            newFieldData.CreateJSON = JsonConvert.SerializeObject(createField);
+                                            newFieldData.AddJSON = JsonConvert.SerializeObject(addField);
+
+                                            projectsDb.SaveChanges();
+                                        }
 
 
-                        //                foreach (var wiTypeId in typeIds)
-                        //                {
-                        //                    try
-                        //                    {
-                        //                        var wiType = projectsDb.WorkItemTypes.First(t => t.Id == wiTypeId);
+                                        if (!azdoController.DoesFieldExistInProject(newFieldData.ReferenceName, org.Name, project.Name))
+                                        {
+                                            var createFieldResponse = azdoController.CreateNewWorkItemField(org.Name, project.Name, newFieldData.CreateJSON);
+                                        }
 
-                                                
+                                        var typeIds = projectsDb.FieldItemRelationShips
+                                            .Where(r => r.NewFieldId == newFieldData.Id).Select(r => r.WorkItemTypeId)
+                                            .ToList();
 
-                        //                        if (azdoController.ProcessHasWorkItemType(org.Name, processID, wiType.Name))
-                        //                        {
-                        //                            logger.InfoFormat($"Updating {wiType.Name} in {project.Name}");
-                        //                            var derivedWorkItemType = azdoController.CreateDerivedWorkItemType(org.Name, project.Name, processID, wiType.Name, wiType.AddJson);
 
-                        //                            var witLayout = azdoController.GetWorkItemTypeLayout(org.Name,
-                        //                                processID, derivedWorkItemType.ReferenceName);
-
-                        //                            string addGroupJSON = "{\"controls\": null,\"id\": null,\"label\": \"Work Alignment\",\"order\": null,\"overridden\": null,\"inherited\": null,\"visible\": true}";
-                        //                            var newGroupName = azdoController.AddGroupToWorkItemTemplate(org.Name,
-                        //                                processID, derivedWorkItemType.ReferenceName, witLayout.Pages[0].Id,
-                        //                                "Section2", "Work Alignment", addGroupJSON);
-
-                        //                            var field = azdoController.AddWorkItemFieldToWorkItemType(org.Name, project.Name, processID, derivedWorkItemType.ReferenceName, newFieldData.AddJSON);
-                        //                            //string createControlToGroupJson = "{\"id\": \"" + field.referenceName + "\",\"order\": \"" + newFieldOrder + "\",\"label\": \"" + newFieldData.Name + "\",\"readOnly\": false,\"visible\": true,\"controlType\": \"pickListString\",\"metadata\": null,\"inherited\": null,\"overridden\": null,\"watermark\": null,\"contribution\": null,\"isContribution\": false,\"height\": null}";
-                        //                            string createControlToGroupJson = "{\"id\": \"" + field.referenceName + "\", \"order\": \"" + newFieldOrder + "\", \"label\": \"" + newFieldData.Name + "\", \"readOnly\": false, \"visible\": true, \"controlType\": \"pickListString\", \"isContribution\": false }";
-                        //                            var controlToGroup = azdoController.CreateControlToGroup(org.Name, processID, derivedWorkItemType.ReferenceName, newGroupName, createControlToGroupJson);
+                                        foreach (var wiTypeId in typeIds)
+                                        {
+                                            try
+                                            {
+                                                var wiType = projectsDb.WorkItemTypes.First(t => t.Id == wiTypeId);
 
 
 
+                                                if (azdoController.ProcessHasWorkItemType(org.Name, processID, wiType.Name))
+                                                {
+                                                    logger.InfoFormat($"Updating {wiType.Name} in {project.Name}");
+                                                    var derivedWorkItemType = azdoController.CreateDerivedWorkItemType(org.Name, project.Name, processID, wiType.Name, wiType.AddJson);
 
-                        //                        }
-                        //                    }
-                        //                    catch (Exception exception)
-                        //                    {
+                                                    var witLayout = azdoController.GetWorkItemTypeLayout(org.Name,
+                                                        processID, derivedWorkItemType.ReferenceName);
 
-                        //                        logger.ErrorFormat($"Failed Adding Fields to work item type {wiTypeId}: {exception.Message} - {exception.StackTrace}");
-                        //                    }
-                        //                }
+                                                    string addGroupJSON = "{\"controls\": null,\"id\": null,\"label\": \"Work Alignment\",\"order\": null,\"overridden\": null,\"inherited\": null,\"visible\": true}";
+                                                    var newGroupName = azdoController.AddGroupToWorkItemTemplate(org.Name,
+                                                        processID, derivedWorkItemType.ReferenceName, witLayout.Pages[0].Id,
+                                                        "Section2", "Work Alignment", addGroupJSON);
 
-                        //                newFieldOrder++;
+                                                    var field = azdoController.AddWorkItemFieldToWorkItemType(org.Name, project.Name, processID, derivedWorkItemType.ReferenceName, newFieldData.AddJSON);
+                                                    //string createControlToGroupJson = "{\"id\": \"" + field.referenceName + "\",\"order\": \"" + newFieldOrder + "\",\"label\": \"" + newFieldData.Name + "\",\"readOnly\": false,\"visible\": true,\"controlType\": \"pickListString\",\"metadata\": null,\"inherited\": null,\"overridden\": null,\"watermark\": null,\"contribution\": null,\"isContribution\": false,\"height\": null}";
+                                                    string createControlToGroupJson = "{\"id\": \"" + field.referenceName + "\", \"order\": \"" + newFieldOrder + "\", \"label\": \"" + newFieldData.Name + "\", \"readOnly\": false, \"visible\": true, \"controlType\": \"pickListString\", \"isContribution\": false }";
+                                                    var controlToGroup = azdoController.CreateControlToGroup(org.Name, processID, derivedWorkItemType.ReferenceName, newGroupName, createControlToGroupJson);
 
-                        //            }
-                        //        }
-                        //        catch (Exception exception)
-                        //        {
-                        //            logger.ErrorFormat($"Failed Adding Fields to Project: {project.Name} - {exception.Message} - {exception.StackTrace}");
 
-                        //        } 
-                        //    }
-                        //    else
-                        //    {
-                        //        logger.InfoFormat($"{project.Name} is on the Field Addition Exception List");
-                        //    }
-                        //}
+
+
+                                                }
+                                            }
+                                            catch (Exception exception)
+                                            {
+
+                                                logger.ErrorFormat($"Failed Adding Fields to work item type {wiTypeId}: {exception.Message} - {exception.StackTrace}");
+                                            }
+                                        }
+
+                                        newFieldOrder++;
+
+                                    }
+                                }
+                                catch (Exception exception)
+                                {
+                                    logger.ErrorFormat($"Failed Adding Fields to Project: {project.Name} - {exception.Message} - {exception.StackTrace}");
+
+                                }
+                            }
+                            else
+                            {
+                                logger.InfoFormat($"{project.Name} is on the Field Addition Exception List");
+                            }
+                        }
 
                     }
                 }
