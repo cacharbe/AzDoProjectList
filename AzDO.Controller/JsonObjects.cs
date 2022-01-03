@@ -188,6 +188,20 @@ namespace AzDO.Controller.JsonData
         public string queueStatus { get; set; }
         public string revision { get; set; }
     }
+    
+    public class WorkItemTypeField
+    {
+        [JsonProperty("defaultValue")]
+        public string DefaultValue { get; set; }
+        [JsonProperty("alwaysRequired")]
+        public bool IsRequired { get; set; }
+        [JsonProperty("referenceName")]
+        public string ReferenceName { get; set; }
+        [JsonProperty("name")]
+        public string Name { get; set; }
+        [JsonProperty("url")]
+        public string Url { get; set; }
+    }
     public class Field
     {
 

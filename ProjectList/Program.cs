@@ -62,7 +62,7 @@ namespace ProjectList
                 {
                     try
                     {
-                        CreateNewFieldReport(azdoController, logger);
+                        GenerateNewFieldRequiredReport(azdoController, logger);
                     }
                     catch (Exception exception)
                     {
@@ -166,6 +166,119 @@ namespace ProjectList
             }
         }
 
+        private static void GenerateNewFieldRequiredReport(Controller azdoController, ILog logger)
+        {
+            try
+            {
+                var reportData = GetFieldReportData(azdoController, logger);
+                if (logger.IsInfoEnabled)
+                    logger.InfoFormat("Generating New Field Required Report");
+                try
+                {
+                    StringBuilder sb = new StringBuilder();
+                    sb.AppendLine("Organization, Project, Work Item Type, Field Name, Is Required");
+                    foreach (var dataPoint in reportData)
+                    { sb.AppendLine($"{dataPoint.Organization}, {dataPoint.Project}, {dataPoint.WorkItemType}, {dataPoint.FieldName}, {dataPoint.IsRequired}"); }
+                    WriteLocalProcessedFile($"New Field Required Report- {DateTime.Now.Year}{DateTime.Now.Month}{DateTime.Now.Day} - {DateTime.Now.Ticks}.csv", sb.ToString(), logger);
+                }
+                catch (Exception exception)
+                {
+                    logger.ErrorFormat($"Failed Writing New Field required Report {exception.Message} - {exception.StackTrace}");
+                    throw;
+                }
+
+            }
+            catch (Exception exception)
+            {
+                logger.ErrorFormat($"Failed Generating New Field Required {exception.Message} - {exception.StackTrace}");
+                throw;
+            }
+        }
+
+        private static List<FieldReportData> GetFieldReportData(Controller azdoController, ILog logger)
+        {
+            try
+            {
+                var reportData = new List<FieldReportData>();
+                using (var projectsDb = new AzDOOrganizationDbContext())
+                {
+                    var orgs = projectsDb.Organizations.Where(o => o.IncludeInFieldReports == true).ToList();
+                    
+                    foreach (var org in orgs)
+                    {
+                        UpdateProcessTemplatesForSingleOrg(azdoController, projectsDb, org, logger);
+                        UpdateProjectsForSingleOrg(azdoController, projectsDb, org, logger);
+                        var projects = projectsDb.Projects.Where(p => p.OrganizationId == org.Id).OrderBy(p => p.Name).ToList();
+                        var newFields = projectsDb.NewFields.ToList();
+                        var exceptions = projectsDb.ProjectExceptions.Where(p => p.OrganizationId == org.Id).ToList();
+                        foreach (var project in projects)
+                        {
+                            if (!exceptions.Any(e => e.ProjectName == project.Name))// && (project.Name == "EnterpriseArchitecture_2641"))
+                            {
+                                try
+                                {
+                                    logger.InfoFormat($"Searching for added fields on Process Template for: {project.Name}");
+                                    foreach (var newFieldData in newFields)
+                                    {
+
+                                        string processID = GetProcessIdFromProjectInfo(azdoController, org, project);
+
+                                        //if (azdoController.DoesFieldExistInProject(newFieldData.ReferenceName, org.Name, project.Name))
+                                        //{
+                                        //    logger.InfoFormat($"Field {newFieldData.ReferenceName} Exists on {project.Name}");//var createFieldResponse = azdoController.CreateNewWorkItemField(org.Name, project.Name, newFieldData.CreateJSON);
+                                        //}
+
+                                        var typeIds = projectsDb.FieldItemRelationShips
+                                            .Where(r => r.NewFieldId == newFieldData.Id).Select(r => r.WorkItemTypeId)
+                                            .ToList();
+
+                                        foreach (var wiTypeId in typeIds)
+                                        {
+                                            try
+                                            {
+                                                var wiType = projectsDb.WorkItemTypes.First(t => t.Id == wiTypeId);
+                                                if (azdoController.ProcessHasWorkItemType(org.Name, processID, wiType.Name))
+                                                {
+                                                    //logger.InfoFormat($"Updating {wiType.Name} in {project.Name}");
+                                                    //var derivedWorkItemType = azdoController.GetDerivedWorkItemType(org.Name, project.Name, processID, wiType.Name, wiType.AddJson);
+
+                                                    var addField =
+                                                JsonConvert.DeserializeObject<AddFieldJson>(newFieldData.AddJSON);
+                                                    bool isfieldRequired = azdoController.IsFieldRequiredOnWorkItemType(org.Name, project.Name, wiType.Name, addField.ReferenceName);
+                                                    reportData.Add(new FieldReportData {Organization=org.Name, Project=project.Name, WorkItemType=wiType.Name, FieldName=addField.ReferenceName, IsRequired=isfieldRequired });
+                                                }
+                                            }
+                                            catch (Exception exception)
+                                            {
+
+                                                logger.ErrorFormat($"Failed to to determine Field requiremnets {wiTypeId}: {exception.Message} - {exception.StackTrace}");
+                                            }
+                                        }
+                                    }
+                                }
+                                catch (Exception exception)
+                                {
+                                    logger.ErrorFormat($"Failed Creating Field Report: {project.Name} - {exception.Message} - {exception.StackTrace}");
+
+                                }
+                            }
+                            else
+                            {
+                                logger.InfoFormat($"{project.Name} is on the Field Addition Exception List");
+                            }
+                        }
+
+                    }
+                }
+                return reportData;
+            }
+            catch (Exception exception)
+            {
+                logger.ErrorFormat($"Failed Collection Field Report Data: {exception.Message} - {exception.StackTrace}");
+                throw;
+            }
+        }
+
         private static void CreateNewFieldReport(Controller azdoController, ILog logger)
         {
             try
@@ -182,7 +295,9 @@ namespace ProjectList
                         {
                             if (exceptions.All(e => e.ProjectName != project.Name))
                             {
-                                //azdoController.DoesFieldExistInProject()
+                               //azdoController.DoesFieldExistInProject()
+                                string processID = GetProcessIdFromProjectInfo(azdoController, org, project);
+                                //var ctrlId = azdoController.DoesControlExistOnTemplate(organization, processId, workItemRefName, createJson.Label);
                                 var fields = azdoController.GetFieldsFromAzDOForProject(org.Name, project.Name);
                                 var newFields = projectsDb.NewFields.ToList();
                                 foreach (var newField in newFields)
@@ -976,5 +1091,13 @@ namespace ProjectList
 
         #endregion
 
+    }
+    public class FieldReportData
+    {
+        public string Organization { get; set; }
+        public string Project { get; set; }
+        public string WorkItemType { get; set; }
+        public string FieldName { get; set; }
+        public bool IsRequired { get; set; }
     }
 }

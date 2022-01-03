@@ -144,6 +144,28 @@ namespace AzDO.Controller
             }
         }
 
+        public bool IsFieldRequiredOnWorkItemType(string orgName, string projectName, String derivedWorkItemTypeReferenceName, string fieldReferenceName)
+        {
+            // GET https://dev.azure.com/{organization}/{project}/_apis/wit/workitemtypes/{type}/fields/{field}?api-version=6.0
+            string getUri = String.Join("?", String.Join("/", _baseUrl, orgName, projectName, "_apis/wit/workitemtypes", derivedWorkItemTypeReferenceName, "fields", fieldReferenceName), "api-version=6.0");
+
+            var result = SendRequest(getUri).Result;
+            var response = JsonConvert.DeserializeObject<WorkItemTypeField>(result);
+            return response.IsRequired;
+        }
+
+        public bool DoesWorkItemFieldExistOnWorkItemType(string orgName, string projName, string processId, string workItemType, string addFieldJson)
+        {
+            try
+            {
+                return true;
+            }
+            catch (Exception exception)
+            {
+                _logger.ErrorFormat($"Unable to complete DoesWorkItemFieldExistOnWorkItemType {exception.Message} - {exception.StackTrace}");
+                throw;
+            }
+        }
         public Field AddWorkItemFieldToWorkItemType(string orgName, string projName, string processId, string workItemType, string addFieldJson)
         {
             try
@@ -163,7 +185,7 @@ namespace AzDO.Controller
             }
             catch (Exception exception)
             {
-                _logger.ErrorFormat($"Unable to complete CreateNewWorkItemField {exception.Message} - {exception.StackTrace}");
+                _logger.ErrorFormat($"Unable to complete AddWorkItemFieldToWorkItemType {exception.Message} - {exception.StackTrace}");
                 throw;
             }
         }
@@ -238,6 +260,9 @@ namespace AzDO.Controller
                 throw;
             }
         }
+
+       
+
         public int GetMostRecentlyChangedWorkItemId(string orgName, string projName)
         {
             try
@@ -597,7 +622,41 @@ namespace AzDO.Controller
 
         }
 
-      public WorkItemType CreateDerivedWorkItemType(string organization, string project, string processID, string baseWorkItemTypeName, string createJSON)
+        public bool HasDerivedWorkItemType(string organization, string project, string processID, string baseWorkItemTypeName, string createJSON)
+        {
+            try
+            {
+                var types = GetWorkItemTypeList(organization, processID);
+                return types.WorkItemTypes.Any(t => t.Inherits == baseWorkItemTypeName);
+            }
+            catch (Exception exception)
+            {
+
+                _logger.ErrorFormat($"Unable to complete CreateDerivedWorkItemType {organization} - {project} - {baseWorkItemTypeName} - {exception.Message} - {exception.StackTrace}");
+                throw;
+            }
+        }
+        public WorkItemType GetDerivedWorkItemType(string organization, string project, string processID, string baseWorkItemTypeName, string createJSON)
+        {
+            try
+            {
+                var types = GetWorkItemTypeList(organization, processID);
+
+                if (types.WorkItemTypes.Any(t => t.Inherits == baseWorkItemTypeName))
+                    return types.WorkItemTypes.First(t => t.Inherits == baseWorkItemTypeName);
+
+                throw new ArgumentException($"We Shouldn't get here for {baseWorkItemTypeName} on {processID} ");
+               // return CreateDerivedWorkItemType( organization,  project,  processID,  baseWorkItemTypeName,  createJSON);
+            }
+            catch (Exception exception)
+            {
+
+                _logger.ErrorFormat($"Unable to complete CreateDerivedWorkItemType {organization} - {project} - {baseWorkItemTypeName} - {exception.Message} - {exception.StackTrace}");
+                throw;
+            }
+        }
+
+        public WorkItemType CreateDerivedWorkItemType(string organization, string project, string processID, string baseWorkItemTypeName, string createJSON)
         {
             try
             {
