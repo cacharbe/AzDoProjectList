@@ -32,8 +32,8 @@ namespace ProjectList
             public const bool ADDFIELDS = false;
             public const bool RUNTEST = false;
             public const string BASE = "https://dev.azure.com";
-            public const string AUTHUSER = "ads.ccharbeneau@accenture.com";
-            public const string PAT = "ox64rp27b6ny2c2rft3w47ca5lfoqpitzixmubm62urajowx6qtq";
+            public const string AUTHUSER = "XXX@YYY.ZZZ";
+            public const string PAT = "INSERTYOURPATHERE";
             public const string API = "api-version=6.0";
             public static string REPORTFILE = $"AzDO Report - {DateTime.Now.Year}{DateTime.Now.Month}{DateTime.Now.Day} - {DateTime.Now.Ticks}.txt";
             public static string ORGREPORTFILE = $"AzDO Orgazniation Project Report - {DateTime.Now.Year}{DateTime.Now.Month}{DateTime.Now.Day} - {DateTime.Now.Ticks}.txt";
